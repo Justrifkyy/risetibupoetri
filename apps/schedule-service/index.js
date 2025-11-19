@@ -1,10 +1,10 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const amqp = require("amqplib");
 const db = require("./config/db");
 const authenticateToken = require("./middleware/authenticateToken");
 const checkAdmin = require("./middleware/checkAdmin");
+// const amqp = require("amqplib"); // disiapkan jika nanti butuh integrasi RabbitMQ
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -26,68 +26,41 @@ app.get("/", (req, res) => {
   res.json({ message: "Schedule Service is active!" });
 });
 
-// Endpoint untuk MEMBUAT jadwal baru (HANYA ADMIN)
+// ========================= CREATE =========================
 app.post("/schedules", authenticateToken, checkAdmin, async (req, res) => {
   try {
-    const { title, description, schedule_time } = req.body;
+    const { title, description, schedule_time, location } = req.body;
     const userId = req.user.id;
 
     if (!title || !schedule_time) {
       return res.status(400).json({ message: "Title and schedule_time are required." });
     }
 
-    const query = "INSERT INTO schedules (title, description, schedule_time, created_by) VALUES (?, ?, ?, ?)";
-    const [result] = await db.execute(query, [title, description, schedule_time, userId]);
-    const newScheduleId = result.insertId;
+    const query = `
+      INSERT INTO schedules (title, description, schedule_time, location, created_by)
+      VALUES (?, ?, ?, ?, ?)
+    `;
+    const [result] = await db.execute(query, [title, description, schedule_time, location, userId]);
 
-    // Kirim pesan ke RabbitMQ setelah jadwal berhasil disimpan
-    try {
-      const connection = await amqp.connect(process.env.RABBITMQ_URL);
-      const channel = await connection.createChannel();
-      const queue = "schedule_notifications";
-      await channel.assertQueue(queue, { durable: true });
-
-      const message = {
-        scheduleId: newScheduleId,
-        title: title,
-        scheduleTime: schedule_time,
-        createdBy: userId,
-      };
-
-      channel.sendToQueue(queue, Buffer.from(JSON.stringify(message)), { persistent: true });
-      console.log(`[x] Sent message for new schedule: ${title}`);
-
-      setTimeout(() => {
-        connection.close();
-      }, 500);
-    } catch (amqpError) {
-      console.error("Failed to send message to RabbitMQ:", amqpError);
-    }
-
-    res.status(201).json({ message: "Schedule created successfully!" });
+    res.status(201).json({
+      message: "Schedule created successfully!",
+      scheduleId: result.insertId,
+    });
   } catch (error) {
     console.error("Create schedule error:", error);
     res.status(500).json({ message: "Internal server error." });
   }
 });
 
-// Endpoint untuk MENGAMBIL jadwal (logika disesuaikan per peran)
+// ========================= READ ALL =========================
 app.get("/schedules", authenticateToken, async (req, res) => {
   try {
-    const { id: userId, role } = req.user;
-    let query;
-    let params = [];
-
-    if (role === "ADMIN") {
-      // Admin hanya melihat jadwal yang mereka buat
-      query = "SELECT id, title, description, schedule_time FROM schedules WHERE created_by = ? ORDER BY schedule_time DESC";
-      params.push(userId);
-    } else {
-      // Organizer & Participant melihat semua jadwal
-      query = "SELECT id, title, description, schedule_time FROM schedules ORDER BY schedule_time DESC";
-    }
-
-    const [schedules] = await db.execute(query, params);
+    const query = `
+      SELECT id, title, description, schedule_time, location
+      FROM schedules
+      ORDER BY schedule_time DESC
+    `;
+    const [schedules] = await db.execute(query);
     res.json(schedules);
   } catch (error) {
     console.error("Get schedules error:", error);
@@ -95,12 +68,16 @@ app.get("/schedules", authenticateToken, async (req, res) => {
   }
 });
 
-// Endpoint untuk MENGAMBIL SATU jadwal (bisa diakses semua role)
+// ========================= READ ONE =========================
 app.get("/schedules/:id", authenticateToken, async (req, res) => {
   try {
-    const scheduleId = req.params.id;
-    const query = "SELECT id, title, description, schedule_time FROM schedules WHERE id = ?";
-    const [schedules] = await db.execute(query, [scheduleId]);
+    const { id } = req.params;
+    const query = `
+      SELECT id, title, description, schedule_time, location
+      FROM schedules
+      WHERE id = ?
+    `;
+    const [schedules] = await db.execute(query, [id]);
 
     if (schedules.length === 0) {
       return res.status(404).json({ message: "Schedule not found." });
@@ -112,26 +89,28 @@ app.get("/schedules/:id", authenticateToken, async (req, res) => {
   }
 });
 
-// Endpoint untuk MENGUPDATE jadwal (HANYA ADMIN)
+// ========================= UPDATE =========================
 app.put("/schedules/:id", authenticateToken, checkAdmin, async (req, res) => {
   try {
-    const scheduleId = req.params.id;
+    const { id } = req.params;
     const userId = req.user.id;
-    const { title, description, schedule_time } = req.body;
+    const { title, description, schedule_time, location } = req.body;
 
     if (!title || !schedule_time) {
       return res.status(400).json({ message: "Title and schedule_time are required." });
     }
 
-    // Admin hanya bisa mengedit jadwal yang mereka buat
-    const query = "UPDATE schedules SET title = ?, description = ?, schedule_time = ? WHERE id = ? AND created_by = ?";
-    const [result] = await db.execute(query, [title, description, schedule_time, scheduleId, userId]);
+    const query = `
+      UPDATE schedules
+      SET title = ?, description = ?, schedule_time = ?, location = ?
+      WHERE id = ? AND created_by = ?
+    `;
+    const [result] = await db.execute(query, [title, description, schedule_time, location, id, userId]);
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({
-        message: "Schedule not found or you do not have permission to edit it.",
-      });
+      return res.status(404).json({ message: "Schedule not found or no permission." });
     }
+
     res.json({ message: "Schedule updated successfully." });
   } catch (error) {
     console.error("Update schedule error:", error);
@@ -139,21 +118,21 @@ app.put("/schedules/:id", authenticateToken, checkAdmin, async (req, res) => {
   }
 });
 
-// Endpoint untuk MENGHAPUS jadwal (HANYA ADMIN)
+// ========================= DELETE =========================
 app.delete("/schedules/:id", authenticateToken, checkAdmin, async (req, res) => {
   try {
-    const scheduleId = req.params.id;
+    const { id } = req.params;
     const userId = req.user.id;
 
-    // Admin hanya bisa menghapus jadwal yang mereka buat
     const query = "DELETE FROM schedules WHERE id = ? AND created_by = ?";
-    const [result] = await db.execute(query, [scheduleId, userId]);
+    const [result] = await db.execute(query, [id, userId]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({
         message: "Schedule not found or you do not have permission to delete it.",
       });
     }
+
     res.json({ message: "Schedule deleted successfully." });
   } catch (error) {
     console.error("Delete schedule error:", error);
@@ -163,5 +142,5 @@ app.delete("/schedules/:id", authenticateToken, checkAdmin, async (req, res) => 
 
 // ## SERVER START ##
 app.listen(PORT, () => {
-  console.log(`Schedule service is running on http://localhost:${PORT}`);
+  console.log(`✅ Schedule service is running on http://localhost:${PORT}`);
 });

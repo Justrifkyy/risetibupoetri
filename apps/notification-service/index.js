@@ -1,48 +1,73 @@
 require("dotenv").config();
 const amqp = require("amqplib");
-
-// Import kedua service notifikasi
-const { sendScheduleNotification } = require("./services/emailService");
+const { sendScheduleNotification, sendPasswordResetEmail } = require("./services/emailService");
 const { sendWhatsAppNotification } = require("./services/whatsappService");
 
-const RABBITMQ_URL = process.env.RBITMQ_URL;
+const RABBITMQ_URL = process.env.RABBITMQ_URL;
 
-async function startListener() {
-  console.log("Notification service starting...");
+// Listener untuk notifikasi jadwal (YANG SUDAH DIPERBAIKI)
+async function startScheduleListener() {
   try {
     const connection = await amqp.connect(RABBITMQ_URL);
     const channel = await connection.createChannel();
-
     const queue = "schedule_notifications";
     await channel.assertQueue(queue, { durable: true });
+    console.log(`[*] Waiting for schedule messages in ${queue}.`);
 
-    console.log(`[*] Waiting for messages in ${queue}. To exit press CTRL+C`);
+    channel.consume(queue, async (msg) => {
+      if (msg !== null) {
+        // == INI ADALAH LOGIKA YANG HILANG ==
+        const messageContent = msg.content.toString();
+        console.log(`[x] Received targeted schedule message: ${messageContent}`);
+
+        const notificationData = JSON.parse(messageContent);
+
+        const targetEmail = notificationData.recipientEmail;
+        const targetPhone = notificationData.recipientPhone;
+        const scheduleDetails = {
+          title: notificationData.scheduleTitle,
+          scheduleTime: notificationData.scheduleTime,
+        };
+
+        await sendScheduleNotification(targetEmail, scheduleDetails);
+        await sendWhatsAppNotification(targetPhone, scheduleDetails);
+        channel.ack(msg);
+      }
+    });
+  } catch (error) {
+    console.error("Error in schedule listener:", error);
+    setTimeout(startScheduleListener, 5000);
+  }
+}
+
+// ## LISTENER BARU UNTUK RESET PASSWORD ##
+async function startPasswordResetListener() {
+  try {
+    const connection = await amqp.connect(RABBITMQ_URL);
+    const channel = await connection.createChannel();
+    const queue = "password_reset_queue"; // Nama antrian baru
+    await channel.assertQueue(queue, { durable: true });
+    console.log(`[*] Waiting for password reset messages in ${queue}.`);
 
     channel.consume(queue, async (msg) => {
       if (msg !== null) {
         const messageContent = msg.content.toString();
-        console.log(`[x] Received message: ${messageContent}`);
+        console.log(`[x] Received password reset request: ${messageContent}`);
 
-        const scheduleData = JSON.parse(messageContent);
+        const data = JSON.parse(messageContent);
 
-        // Nomor tujuan untuk tes WhatsApp (hardcode)
-        // PENTING: Ganti dengan nomor WhatsApp Anda yang sudah terverifikasi di Meta
-        const recipientPhoneNumber = "6289518804219"; // Ganti jika perlu
+        // Panggil service email untuk kirim link reset
+        await sendPasswordResetEmail(data.email, data.token);
 
-        console.log("--> Sending email notification...");
-        await sendScheduleNotification(scheduleData);
-
-        console.log("--> Sending WhatsApp notification...");
-        await sendWhatsAppNotification(recipientPhoneNumber, scheduleData);
-
-        channel.ack(msg); // Konfirmasi bahwa pesan sudah diproses
+        channel.ack(msg);
       }
     });
   } catch (error) {
-    console.error("Error in notification service:", error);
-    // Coba konek lagi setelah beberapa detik
-    setTimeout(startListener, 5000);
+    console.error("Error in password reset listener:", error);
+    setTimeout(startPasswordResetListener, 5000);
   }
 }
 
-startListener();
+// Jalankan kedua listener
+startScheduleListener();
+startPasswordResetListener();

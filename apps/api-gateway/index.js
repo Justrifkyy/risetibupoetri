@@ -10,13 +10,8 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
-// ## PERBAIKAN DI SINI ##
-// Rute untuk Auth Service TIDAK PERLU proxyReqPathResolver.
-// Ini agar '/auth/login' diubah menjadi '/login' saat diteruskan.
 app.use("/auth", proxy("http://localhost:3001"));
 
-// Rute untuk service lain TETAP MEMERLUKAN proxyReqPathResolver
-// karena path di gateway dan di service-nya sama persis.
 app.use(
   "/schedules",
   proxy("http://localhost:3002", {

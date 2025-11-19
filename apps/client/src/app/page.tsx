@@ -27,7 +27,7 @@ export default function HomePage() {
           <h1 className="text-6xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 mb-6 leading-tight">
             Selamat Datang di
             <br />
-            ManajemenJadwal
+            Manajemen Jadwal
           </h1>
 
           <p className="text-xl text-gray-700 max-w-3xl mx-auto mb-12 leading-relaxed">Solusi terbaik untuk mengatur semua jadwal Anda, mengirim notifikasi otomatis, dan melacak kehadiran dengan mudah dan efisien.</p>

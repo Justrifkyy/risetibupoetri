@@ -3,47 +3,50 @@
 import { useState } from "react";
 import axios, { isAxiosError } from "axios";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { toast } from "react-toastify";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
+  const router = useRouter();
+  const { login } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMessage("");
+
     try {
       const response = await axios.post("http://localhost:4000/auth/login", {
         email,
         password,
       });
-      localStorage.setItem("token", response.data.token);
-      setMessage("Login successful! Redirecting to profile...");
-      setEmail("");
-      setPassword("");
-      window.location.href = "/"; // Redirect ke halaman profil
+
+      const token = response.data.token;
+      login(token); // Gunakan fungsi login dari context
+
+      toast.success("Login berhasil! Mengarahkan ke dasbor...");
+      router.push("/schedules"); // Arahkan ke halaman jadwal
     } catch (error) {
-      // Perbaikan: Penanganan error yang lebih aman
       if (isAxiosError(error) && error.response) {
-        setMessage(error.response.data.message);
+        toast.error(error.response.data.message);
       } else {
-        setMessage("Login failed. Please try again.");
+        toast.error("Login gagal. Silakan coba lagi.");
       }
     }
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-gray-100">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gray-100 p-4">
       <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
         <h1 className="text-2xl font-bold text-center text-gray-900">Sign In</h1>
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
-            {/* Perbaikan: Menambahkan htmlFor */}
             <label htmlFor="email-login" className="block text-sm font-medium text-gray-700">
               Email
             </label>
             <input
-              id="email-login" // Perbaikan: Menambahkan id
+              id="email-login"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -52,12 +55,17 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            {/* Perbaikan: Menambahkan htmlFor */}
-            <label htmlFor="password-login" className="block text-sm font-medium text-gray-700">
-              Password
-            </label>
+            <div className="flex justify-between items-center">
+              <label htmlFor="password-login" className="block text-sm font-medium text-gray-700">
+                Password
+              </label>
+              {/* == LINK BARU DITAMBAHKAN DI SINI == */}
+              <Link href="/forgot-password" className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
+                Lupa password?
+              </Link>
+            </div>
             <input
-              id="password-login" // Perbaikan: Menambahkan id
+              id="password-login"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -71,11 +79,9 @@ export default function LoginPage() {
             </button>
           </div>
         </form>
-        {message && <p className="mt-4 text-center text-sm text-red-600">{message}</p>}
         <p className="text-center text-sm text-gray-600">
-          {/* Perbaikan: Menggunakan &apos; */}
-          Don&apos;t have an account?{" "}
-          <Link href="/" className="font-medium text-indigo-600 hover:text-indigo-500">
+          Belum punya akun?{" "}
+          <Link href="/register" className="font-medium text-indigo-600 hover:text-indigo-500">
             Register
           </Link>
         </p>

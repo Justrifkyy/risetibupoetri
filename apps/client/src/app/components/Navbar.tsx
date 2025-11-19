@@ -37,7 +37,7 @@ export default function Navbar() {
               </div>
               <div>
                 <span className="text-2xl font-bold text-white tracking-tight">
-                  Manajemen<span className="text-purple-200">Jadwal</span>
+                  Manajemen <span className="text-purple-200">Jadwal</span>
                 </span>
                 <div className="h-0.5 bg-gradient-to-r from-white/0 via-white/50 to-white/0 group-hover:via-white/80 transition-all"></div>
               </div>
